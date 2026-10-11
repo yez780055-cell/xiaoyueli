@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+.DS_Store
+*.local
+.codex/
+.env
+.env.*
+!.env.example
+upload/
+*.zip
+*.db
+*.sqlite
+*.sqlite3
