@@ -4,7 +4,7 @@ import type { AppData, AppSettings, Page, PeriodRecord } from './types'
 import { daysBetween, localDateString, shiftMonth } from './domain/date'
 import { calculateForecast } from './domain/forecast'
 import { prepareRestoredData } from './domain/backup'
-import { createPeriod, sortPeriods, validatePeriod } from './domain/periods'
+import { createPeriod, sortPeriods, togglePeriodForDate, validatePeriod } from './domain/periods'
 import { clearAppData, emptyAppData, loadAppData, saveAppData } from './domain/storage'
 import { createPinHash, decryptBackup, encryptBackup, verifyPin } from './domain/security'
 import { Icon } from './components/Icon'
@@ -17,7 +17,10 @@ import { StatsPage } from './pages/StatsPage'
 import { Welcome, type WelcomeAction } from './pages/Welcome'
 import './styles.css'
 
-type ModalName = 'start' | 'end' | 'form-backfill' | 'form-edit' | 'delete' | 'backup' | 'restore' | 'restore-confirm' | 'clear' | 'set-pin' | 'disable-lock' | 'care-memo' | null
+type ModalName = 'form-backfill' | 'form-edit' | 'delete' | 'backup' | 'restore' | 'restore-confirm' | 'clear' | 'set-pin' | 'disable-lock' | null
+
+interface ToastAction { label: string; onClick: () => void }
+interface ToastState { message: string; action?: ToastAction }
 
 interface InstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -35,7 +38,7 @@ export default function App() {
   const [editingRecord, setEditingRecord] = useState<PeriodRecord | null>(null)
   const [deletingRecord, setDeletingRecord] = useState<PeriodRecord | null>(null)
   const [pendingRestore, setPendingRestore] = useState<AppData | null>(null)
-  const [toast, setToast] = useState('')
+  const [toast, setToast] = useState<ToastState | null>(null)
   const [locked, setLocked] = useState(false)
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null)
   const toastTimer = useRef<number | null>(null)
@@ -43,11 +46,19 @@ export default function App() {
   const pageRef = useRef<Page>('calendar')
   const modalRef = useRef<ModalName>(null)
 
-  const showToast = useCallback((message: string) => {
-    setToast(message)
+  const showToast = useCallback((message: string, action?: ToastAction) => {
+    setToast({ message, action })
     if (toastTimer.current !== null) window.clearTimeout(toastTimer.current)
-    toastTimer.current = window.setTimeout(() => setToast(''), 3200)
+    toastTimer.current = window.setTimeout(() => setToast(null), 3200)
   }, [])
+
+  const runToastAction = () => {
+    const action = toast?.action
+    if (toastTimer.current !== null) window.clearTimeout(toastTimer.current)
+    toastTimer.current = null
+    setToast(null)
+    action?.onClick()
+  }
 
   useEffect(() => {
     let mounted = true
@@ -147,13 +158,12 @@ export default function App() {
   }, [])
 
   const commit = useCallback((update: (previous: AppData) => AppData) => {
-    setData((previous) => {
-      if (!previous) return previous
-      const next = update(previous)
-      dataRef.current = next
-      void saveAppData(next).catch(() => showToast('保存失败，请检查设备存储空间。'))
-      return next
-    })
+    const previous = dataRef.current
+    if (!previous) return
+    const next = update(previous)
+    dataRef.current = next
+    setData(next)
+    void saveAppData(next).catch(() => showToast('保存失败，请检查设备存储空间。'))
   }, [showToast])
 
   const updateSettings = useCallback((update: Partial<AppSettings>) => {
@@ -167,32 +177,56 @@ export default function App() {
     if (date.slice(0, 7) !== monthDate.slice(0, 7)) setMonthDate(date)
   }
 
-  const startToday = () => {
-    if (!data) return
-    const candidate = { startDate: today, endDate: null }
-    const validation = validatePeriod(candidate, data.periods, { allowOngoing: true, today })
-    if (!validation.valid) return showToast(validation.message ?? '无法开始记录。')
-    const period = createPeriod(today)
-    commit((previous) => ({ ...previous, periods: sortPeriods([...previous.periods, period]) }))
-    setSelectedDate(today)
-    setMonthDate(today)
-    closeModal()
-    showToast('已开始记录，经期会自动延续到今天。')
-  }
+  const togglePeriod = (date: string, enabled: boolean) => {
+    const current = dataRef.current
+    if (!current) return
+    const result = togglePeriodForDate(current.periods, date, enabled, today)
+    if (!result.ok) {
+      showToast(result.message)
+      return
+    }
+    if (!result.changed) return
 
-  const endToday = () => {
-    if (!data) return
-    const active = data.periods.find((period) => period.endDate === null)
-    if (!active) return showToast('目前没有进行中的经期。')
-    const validation = validatePeriod({ startDate: active.startDate, endDate: today }, data.periods, { excludeId: active.id, today })
-    if (!validation.valid) return showToast(validation.message ?? '无法结束这段记录。')
-    commit((previous) => ({
-      ...previous,
-      periods: sortPeriods(previous.periods.map((period) => period.id === active.id ? { ...period, endDate: today, updatedAt: new Date().toISOString() } : period))
-    }))
-    setSelectedDate(today)
-    closeModal()
-    showToast('已确认今天为经期最后一天。')
+    const previousRecord = current.periods.find((period) => period.id === result.record.id) ?? null
+    commit((previous) => ({ ...previous, periods: result.periods }))
+    setSelectedDate(date)
+    setMonthDate(date)
+
+    const undo: ToastAction = {
+      label: '撤销',
+      onClick: () => {
+        const latest = dataRef.current
+        const changedRecord = latest?.periods.find((period) => period.id === result.record.id)
+        if (!latest || !changedRecord || changedRecord.updatedAt !== result.record.updatedAt) {
+          showToast('记录已变化，无法撤销。')
+          return
+        }
+        if (result.action === 'started') {
+          if (changedRecord.endDate !== null) {
+            showToast('记录已变化，无法撤销。')
+            return
+          }
+          commit((previous) => ({ ...previous, periods: previous.periods.filter((period) => period.id !== changedRecord.id) }))
+          showToast('已撤销经期开始记录。')
+          return
+        }
+        if (changedRecord.endDate !== result.record.endDate || latest.periods.some((period) => period.id !== changedRecord.id && period.endDate === null)) {
+          showToast('记录已变化，无法撤销。')
+          return
+        }
+        const restoredUpdatedAt = previousRecord?.updatedAt ?? changedRecord.createdAt
+        commit((previous) => ({
+          ...previous,
+          periods: sortPeriods(previous.periods.map((period) => period.id === changedRecord.id
+            ? { ...period, endDate: null, updatedAt: restoredUpdatedAt }
+            : period))
+        }))
+        showToast('已撤销经期结束记录。')
+      }
+    }
+    showToast(result.action === 'started'
+      ? '已从 ' + date + ' 开始记录，并自动延续至今天。'
+      : '已将 ' + date + ' 设为经期结束日。', undo)
   }
 
   const savePeriod = (startDate: string, endDate: string | null, existing?: PeriodRecord) => {
@@ -388,7 +422,7 @@ export default function App() {
   }, [ready, data, locked, showToast])
 
   if (!ready || !data) return <Splash />
-  if (locked) return <div className="app-root"><UnlockScreen onUnlock={unlock} onReset={() => openModal('clear')} />{modal === 'clear' && <ClearDataModal onClose={closeModal} onConfirm={clearEverything} />}{toast && <div className="toast-message" role="status"><Icon name="info" size={16} />{toast}</div>}</div>
+  if (locked) return <div className="app-root"><UnlockScreen onUnlock={unlock} onReset={() => openModal('clear')} />{modal === 'clear' && <ClearDataModal onClose={closeModal} onConfirm={clearEverything} />}{toast && <ToastBanner toast={toast} onAction={runToastAction} />}</div>
   if (!data.settings.onboardingComplete) return <Welcome settings={data.settings} onFinish={finishWelcome} />
 
   return (
@@ -404,17 +438,13 @@ export default function App() {
         onMonthChange={(amount) => setMonthDate((current) => shiftMonth(current, amount))}
         onOpenStats={() => navigate('stats')}
         onOpenSettings={() => navigate('settings')}
-        onStart={() => openModal('start')}
-        onEnd={() => openModal('end')}
+        onStart={() => togglePeriod(today, true)}
+        onTogglePeriod={togglePeriod}
         onBackfill={() => openModal('form-backfill')}
-        onEdit={(record) => { setEditingRecord(record); openModal('form-edit') }}
-        onShowMemo={() => openModal('care-memo')}
       />}
       {page === 'stats' && <StatsPage periods={data.periods} onBack={goBack} onBackfill={() => openModal('form-backfill')} onEdit={(record) => { setEditingRecord(record); openModal('form-edit') }} />}
       {page === 'settings' && <SettingsPage settings={data.settings} onBack={goBack} onUpdate={updateSettings} onBackup={() => openModal('backup')} onRestore={() => openModal('restore')} onClear={() => openModal('clear')} onRequestLock={() => openModal('set-pin')} onDisableLock={() => openModal('disable-lock')} onToast={showToast} canInstall={!!installPrompt} onInstall={installApp} />}
 
-      {modal === 'start' && <ConfirmRecordModal kind="start" date={today} onClose={closeModal} onConfirm={startToday} />}
-      {modal === 'end' && <ConfirmRecordModal kind="end" date={today} onClose={closeModal} onConfirm={endToday} />}
       {modal === 'form-backfill' && <PeriodFormModal mode="backfill" initialDate={selectedDate < today ? selectedDate : ''} onClose={closeModal} onSave={(start, end) => savePeriod(start, end)} />}
       {modal === 'form-edit' && editingRecord && <PeriodFormModal mode="edit" record={editingRecord} initialDate={today} onClose={closeModal} onSave={(start, end) => savePeriod(start, end, editingRecord)} onDelete={() => { setDeletingRecord(editingRecord); modalRef.current = 'delete'; setModal('delete') }} />}
       {modal === 'delete' && deletingRecord && <ConfirmRecordModal kind="delete" date={deletingRecord.startDate} onClose={closeModal} onConfirm={deletePeriod} />}
@@ -424,8 +454,17 @@ export default function App() {
       {modal === 'clear' && <ClearDataModal onClose={closeModal} onConfirm={clearEverything} />}
       {modal === 'set-pin' && <PinSetupModal onClose={closeModal} onSave={savePin} onError={showToast} />}
       {modal === 'disable-lock' && <Modal title="关闭应用锁" onClose={closeModal}><div className="confirm-content"><span className="confirm-icon confirm-icon--delete"><Icon name="lock" size={23} /></span><p>关闭后，打开小月历时不再要求输入 PIN。当前记录不会被删除。</p><div className="modal-actions"><button className="button button-ghost" onClick={closeModal}>取消</button><button className="button button-primary" onClick={disableLock}>关闭应用锁</button></div></div></Modal>}
-      {modal === 'care-memo' && <Modal title="她的关怀备忘" onClose={closeModal}><div className="memo-modal-text"><span className="memo-modal-icon"><Icon name="heart" size={20} /></span><p>{data.settings.careMemo || '还没有备忘内容。'}</p><button className="button button-soft" onClick={() => { closeModal(); navigate('settings') }}>前往设置修改</button></div></Modal>}
-      {toast && <div className="toast-message" role="status"><Icon name="info" size={16} />{toast}</div>}
+      {toast && <ToastBanner toast={toast} onAction={runToastAction} />}
+    </div>
+  )
+}
+
+function ToastBanner({ toast, onAction }: { toast: ToastState; onAction: () => void }) {
+  return (
+    <div className="toast-message" role="status">
+      <Icon name="info" size={16} />
+      <span className="toast-copy">{toast.message}</span>
+      {toast.action && <button type="button" className="toast-action" onClick={onAction}>{toast.action.label}</button>}
     </div>
   )
 }

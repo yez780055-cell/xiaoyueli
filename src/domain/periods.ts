@@ -6,6 +6,11 @@ export interface PeriodValidation {
   message?: string
 }
 
+export type PeriodToggleResult =
+  | { ok: true; changed: false; periods: PeriodRecord[] }
+  | { ok: true; changed: true; action: 'started' | 'ended'; periods: PeriodRecord[]; record: PeriodRecord }
+  | { ok: false; changed: false; periods: PeriodRecord[]; message: string }
+
 export function validatePeriod(
   candidate: Pick<PeriodRecord, 'startDate' | 'endDate'>,
   periods: PeriodRecord[],
@@ -63,6 +68,35 @@ export function createPeriod(startDate: string, endDate: string | null = null): 
     endDate,
     createdAt: now,
     updatedAt: now
+  }
+}
+
+export function togglePeriodForDate(periods: PeriodRecord[], date: string, enabled: boolean, today = localDateString()): PeriodToggleResult {
+  if (!isValidDateString(date)) return { ok: false, changed: false, periods, message: '请选择有效的日期。' }
+  if (date > today) return { ok: false, changed: false, periods, message: '未来日期不能记录为实际经期。' }
+
+  const existing = getPeriodOnDate(periods, date, today)
+  if (enabled) {
+    if (existing?.endDate === null) return { ok: true, changed: false, periods }
+    if (existing) return { ok: false, changed: false, periods, message: '已结束的历史记录请在周期统计页编辑。' }
+    const validation = validatePeriod({ startDate: date, endDate: null }, periods, { allowOngoing: true, today })
+    if (!validation.valid) return { ok: false, changed: false, periods, message: validation.message ?? '无法开始记录。' }
+    const record = createPeriod(date)
+    return { ok: true, changed: true, action: 'started', periods: sortPeriods([...periods, record]), record }
+  }
+
+  if (!existing) return { ok: false, changed: false, periods, message: '这一天没有进行中的经期记录。' }
+  if (existing.endDate !== null) return { ok: false, changed: false, periods, message: '已结束的历史记录请在周期统计页编辑。' }
+  const validation = validatePeriod({ startDate: existing.startDate, endDate: date }, periods, { excludeId: existing.id, today })
+  if (!validation.valid) return { ok: false, changed: false, periods, message: validation.message ?? '无法结束这段记录。' }
+
+  const record = { ...existing, endDate: date, updatedAt: new Date().toISOString() }
+  return {
+    ok: true,
+    changed: true,
+    action: 'ended',
+    periods: sortPeriods(periods.map((period) => period.id === existing.id ? record : period)),
+    record
   }
 }
 
