@@ -133,11 +133,11 @@ export function PeriodFormModal({
         />
         {mode === 'edit' && <button type="button" className={['ongoing-choice', ongoing ? 'ongoing-choice--active' : ''].filter(Boolean).join(' ')} aria-pressed={ongoing} onClick={toggleOngoing}><span className="checkbox-mark">{ongoing && <Icon name="check" size={13} />}</span><span><strong>这段经期仍在进行</strong><small>结束日期会自动延续到今天</small></span></button>}
         {error && <p className="form-error" role="alert">{error}</p>}
+        {mode === 'edit' && onDelete && <button className="delete-record-link" onClick={onDelete}><Icon name="trash" size={16} />删除这段经期</button>}
         <div className="modal-actions date-picker-actions">
           <button className="button button-ghost" onClick={onClose}>取消</button>
           <button className="button button-primary" onClick={submit}><Icon name="check" size={17} />{mode === 'backfill' ? '保存记录' : '保存修改'}</button>
         </div>
-        {mode === 'edit' && onDelete && <button className="delete-record-link" onClick={onDelete}><Icon name="trash" size={16} />删除这段经期</button>}
       </div>
     </Modal>
   )

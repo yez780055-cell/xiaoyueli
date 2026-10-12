@@ -43,8 +43,8 @@ export function CalendarDatePicker({
           <Icon name="chevron-left" size={18} />
         </button>
         <div className="date-picker-selects">
-          <label><span className="visually-hidden">选择年份</span><select aria-label="选择年份" value={currentYear} onChange={(event) => changeMonth(Number(event.target.value), date.getMonth() + 1)}>{years.map((year) => <option key={year} value={year}>{year}年</option>)}</select></label>
-          <label><span className="visually-hidden">选择月份</span><select aria-label="选择月份" value={date.getMonth() + 1} onChange={(event) => changeMonth(currentYear, Number(event.target.value))}>{months.map((month) => <option key={month} value={month} disabled={currentYear === Number(today.slice(0, 4)) && month > Number(today.slice(5, 7))}>{month}月</option>)}</select></label>
+          <select aria-label="选择年份" value={currentYear} onChange={(event) => changeMonth(Number(event.target.value), date.getMonth() + 1)}>{years.map((year) => <option key={year} value={year}>{year}年</option>)}</select>
+          <select aria-label="选择月份" value={date.getMonth() + 1} onChange={(event) => changeMonth(currentYear, Number(event.target.value))}>{months.map((month) => <option key={month} value={month} disabled={currentYear === Number(today.slice(0, 4)) && month > Number(today.slice(5, 7))}>{month}月</option>)}</select>
         </div>
         <button type="button" className="date-picker-nav" aria-label="下个月" disabled={atLastMonth} onClick={() => onMonthChange(shiftMonth(monthDate, 1))}>
           <Icon name="chevron-right" size={18} />
