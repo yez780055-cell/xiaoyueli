@@ -61,7 +61,9 @@ jobs:
       - name: Install Android platform using runner SDK
         run: |
           echo "Android SDK: ${ANDROID_HOME:-${ANDROID_SDK_ROOT:-unknown}}"
-          sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print -quit)"
+          if [ -z "$SDKMANAGER" ]; then echo "Android SDK manager is unavailable"; exit 1; fi
+          "$SDKMANAGER" --install "platforms;android-35" "build-tools;35.0.0"
 
       - name: Build debug APK
         working-directory: android
