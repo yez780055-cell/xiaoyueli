@@ -77,4 +77,11 @@ describe('HomePage period switch for completed history', () => {
     expect(button).toContain('aria-checked="true"')
     expect(button).not.toContain('disabled=""')
   })
+
+  it('allows opening a historical backfill before a later ongoing period', () => {
+    const ongoing = { ...endedPeriod, startDate: today, endDate: null, updatedAt: '2024-10-12T08:00:00.000Z' }
+    const button = switchMarkup(renderHome('2024-06-21', ongoing))
+    expect(button).toContain('aria-checked="false"')
+    expect(button).not.toContain('disabled=""')
+  })
 })

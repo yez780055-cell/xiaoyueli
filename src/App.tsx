@@ -4,7 +4,7 @@ import type { AppData, AppSettings, Page, PeriodRecord } from './types'
 import { daysBetween, localDateString, shiftMonth } from './domain/date'
 import { calculateForecast } from './domain/forecast'
 import { prepareRestoredData } from './domain/backup'
-import { createPeriod, sortPeriods, togglePeriodForDate, undoPeriodToggle, validatePeriod } from './domain/periods'
+import { addCompletedPeriod, createPeriod, getHistoricalPeriodEndDateMax, sortPeriods, togglePeriodForDate, undoPeriodToggle, validatePeriod } from './domain/periods'
 import { clearAppData, createSerialSaveQueue, emptyAppData, loadAppData, saveAppData } from './domain/storage'
 import { createPinHash, decryptBackup, encryptBackup, verifyPin } from './domain/security'
 import { Icon } from './components/Icon'
@@ -17,7 +17,7 @@ import { StatsPage } from './pages/StatsPage'
 import { Welcome, type WelcomeAction } from './pages/Welcome'
 import './styles.css'
 
-type ModalName = 'form-backfill' | 'form-edit' | 'delete' | 'backup' | 'restore' | 'restore-confirm' | 'clear' | 'set-pin' | 'disable-lock' | null
+type ModalName = 'form-backfill' | 'form-backfill-fixed' | 'form-edit' | 'delete' | 'backup' | 'restore' | 'restore-confirm' | 'clear' | 'set-pin' | 'disable-lock' | null
 
 interface ToastAction { label: string; onClick: () => void }
 interface ToastState { message: string; action?: ToastAction }
@@ -190,7 +190,14 @@ export default function App() {
       showToast(result.message)
       return
     }
-    if (!result.changed) return
+    if (!result.changed) {
+      if (result.action === 'backfill-required') {
+        setSelectedDate(result.startDate)
+        setMonthDate(result.startDate)
+        openModal('form-backfill-fixed')
+      }
+      return
+    }
 
     const previousRecord = current.periods.find((period) => period.id === result.record.id) ?? null
     commit((previous) => ({ ...previous, periods: result.periods }))
@@ -202,7 +209,7 @@ export default function App() {
       onClick: () => {
         const latest = dataRef.current
         const restoredPeriods = latest
-          ? undoPeriodToggle(latest.periods, result.action, result.record, previousRecord)
+          ? undoPeriodToggle(latest.periods, result.action, result.record, previousRecord, today)
           : null
         if (!latest || !restoredPeriods) {
           showToast('记录已变化，无法撤销。')
@@ -212,24 +219,30 @@ export default function App() {
         showToast(result.action === 'started' ? '已撤销经期开始记录。' : '已撤销经期结束记录。')
       }
     }
-    showToast(result.action === 'started'
+    const message = result.action === 'started'
       ? '已从 ' + date + ' 开始记录，并自动延续至今天。'
-      : '已将 ' + date + ' 设为经期结束日。', undo)
+      : result.action === 'cancelled'
+        ? '已取消经期开始记录。'
+        : '已将 ' + date + ' 设为经期结束日。'
+    showToast(message, undo)
   }
 
   const savePeriod = (startDate: string, endDate: string | null, existing?: PeriodRecord) => {
-    if (!data) return
-    const validation = validatePeriod({ startDate, endDate }, data.periods, { excludeId: existing?.id, allowOngoing: true, today })
-    if (!validation.valid) return showToast(validation.message ?? '请检查日期。')
+    const current = dataRef.current
+    if (!current) return
     if (existing) {
+      const validation = validatePeriod({ startDate, endDate }, current.periods, { excludeId: existing.id, allowOngoing: true, today })
+      if (!validation.valid) return showToast(validation.message ?? '请检查日期。')
       commit((previous) => ({
         ...previous,
         periods: sortPeriods(previous.periods.map((period) => period.id === existing.id ? { ...period, startDate, endDate, updatedAt: new Date().toISOString() } : period))
       }))
       showToast('记录已修改，预测和统计已更新。')
     } else {
-      const created = createPeriod(startDate, endDate)
-      commit((previous) => ({ ...previous, periods: sortPeriods([...previous.periods, created]) }))
+      if (!endDate) return showToast('请选择结束日期。')
+      const result = addCompletedPeriod(current.periods, startDate, endDate, today)
+      if (!result.ok) return showToast(result.message)
+      commit((previous) => ({ ...previous, periods: result.periods }))
       showToast('历史经期已补录。')
     }
     setSelectedDate(startDate)
@@ -434,6 +447,7 @@ export default function App() {
       {page === 'settings' && <SettingsPage settings={data.settings} onBack={goBack} onUpdate={updateSettings} onBackup={() => openModal('backup')} onRestore={() => openModal('restore')} onClear={() => openModal('clear')} onRequestLock={() => openModal('set-pin')} onDisableLock={() => openModal('disable-lock')} onToast={showToast} canInstall={!!installPrompt} onInstall={installApp} />}
 
       {modal === 'form-backfill' && <PeriodFormModal mode="backfill" initialDate={selectedDate < today ? selectedDate : ''} onClose={closeModal} onSave={(start, end) => savePeriod(start, end)} />}
+      {modal === 'form-backfill-fixed' && <PeriodFormModal mode="backfill" initialDate={selectedDate} fixedStartDate endDateMax={getHistoricalPeriodEndDateMax(selectedDate, data.periods, today)} title="记录历史经期" onClose={closeModal} onSave={(start, end) => savePeriod(start, end)} />}
       {modal === 'form-edit' && editingRecord && <PeriodFormModal mode="edit" record={editingRecord} initialDate={today} onClose={closeModal} onSave={(start, end) => savePeriod(start, end, editingRecord)} onDelete={() => { setDeletingRecord(editingRecord); modalRef.current = 'delete'; setModal('delete') }} />}
       {modal === 'delete' && deletingRecord && <ConfirmRecordModal kind="delete" date={deletingRecord.startDate} onClose={closeModal} onConfirm={deletePeriod} />}
       {modal === 'backup' && <BackupPasswordModal mode="create" onClose={closeModal} onCreate={handleBackup} onRestore={handleRestore} onError={showToast} />}

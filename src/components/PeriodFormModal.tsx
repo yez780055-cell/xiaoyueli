@@ -8,6 +8,9 @@ export function PeriodFormModal({
   mode,
   record,
   initialDate,
+  fixedStartDate = false,
+  endDateMax,
+  title,
   onClose,
   onSave,
   onDelete
@@ -15,6 +18,9 @@ export function PeriodFormModal({
   mode: 'backfill' | 'edit'
   record?: PeriodRecord
   initialDate: string
+  fixedStartDate?: boolean
+  endDateMax?: string
+  title?: string
   onClose: () => void
   onSave: (startDate: string, endDate: string | null) => void
   onDelete?: () => void
@@ -24,7 +30,7 @@ export function PeriodFormModal({
   const [endDate, setEndDate] = useState(record ? (record.endDate ?? '') : (mode === 'backfill' ? '' : initialDate))
   const [ongoing, setOngoing] = useState(record?.endDate === null)
   const [error, setError] = useState('')
-  const title = mode === 'backfill' ? '补录历史经期' : '编辑这段经期'
+  const modalTitle = title ?? (mode === 'backfill' ? '补录历史经期' : '编辑这段经期')
 
   const submit = () => {
     if (!startDate || (!ongoing && !endDate)) {
@@ -39,17 +45,21 @@ export function PeriodFormModal({
       setError('结束日期不能早于开始日期。')
       return
     }
+    if (!ongoing && endDateMax && endDate > endDateMax) {
+      setError('结束日期与后续经期重叠，请调整日期。')
+      return
+    }
     onSave(startDate, ongoing ? null : endDate)
   }
 
   return (
-    <Modal title={title} onClose={onClose}>
+    <Modal title={modalTitle} onClose={onClose}>
       <div className="form-modal-content">
-        <p className="modal-description">日期会立即用于更新日历、统计与预测。已有记录冲突时无法保存。</p>
+        <p className="modal-description">{fixedStartDate ? '开始日期已固定。请选择不与后续经期重叠的结束日期。' : '日期会立即用于更新日历、统计与预测。已有记录冲突时无法保存。'}</p>
         <label className="field-label" htmlFor="period-start">开始日期</label>
-        <input className="date-input" id="period-start" type="date" max={today} value={startDate} onChange={(event) => { setStartDate(event.target.value); setError('') }} />
+        <input className="date-input" id="period-start" type="date" max={today} value={startDate} disabled={fixedStartDate} onChange={(event) => { setStartDate(event.target.value); setError('') }} />
         <label className="field-label" htmlFor="period-end">结束日期</label>
-        <input className="date-input" id="period-end" type="date" max={today} value={endDate} disabled={ongoing} onChange={(event) => { setEndDate(event.target.value); setError('') }} />
+        <input className="date-input" id="period-end" type="date" min={startDate || undefined} max={endDateMax ?? today} value={endDate} disabled={ongoing} onChange={(event) => { setEndDate(event.target.value); setError('') }} />
         {mode === 'edit' && <button type="button" className={`ongoing-choice ${ongoing ? 'ongoing-choice--active' : ''}`} aria-pressed={ongoing} onClick={() => { setOngoing(!ongoing); setError('') }}><span className="checkbox-mark">{ongoing && <Icon name="check" size={13} />}</span><span><strong>这段经期仍在进行</strong><small>结束日期会自动延续到今天</small></span></button>}
         {error && <p className="form-error">{error}</p>}
         <div className="modal-actions">
