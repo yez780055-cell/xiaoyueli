@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { registerSW } from 'virtual:pwa-register'
 import type { AppData, AppSettings, Page, PeriodRecord } from './types'
-import { daysBetween, localDateString, shiftMonth } from './domain/date'
+import { localDateString, shiftMonth } from './domain/date'
 import { calculateForecast } from './domain/forecast'
 import { prepareRestoredData } from './domain/backup'
 import { addCompletedPeriod, createPeriod, getHistoricalPeriodEndDateMax, sortPeriods, togglePeriodForDate, undoPeriodToggle, validatePeriod } from './domain/periods'
@@ -22,10 +22,6 @@ type ModalName = 'form-backfill' | 'form-backfill-fixed' | 'form-edit' | 'delete
 interface ToastAction { label: string; onClick: () => void }
 interface ToastState { message: string; action?: ToastAction }
 
-interface InstallPromptEvent extends Event {
-  prompt: () => Promise<void>
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
-}
 
 export default function App() {
   const [data, setData] = useState<AppData | null>(null)
@@ -40,7 +36,6 @@ export default function App() {
   const [pendingRestore, setPendingRestore] = useState<AppData | null>(null)
   const [toast, setToast] = useState<ToastState | null>(null)
   const [locked, setLocked] = useState(false)
-  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null)
   const toastTimer = useRef<number | null>(null)
   const dataRef = useRef<AppData | null>(null)
   const pageRef = useRef<Page>('calendar')
@@ -88,22 +83,6 @@ export default function App() {
     registerSW({ immediate: true })
   }, [])
 
-  useEffect(() => {
-    const beforeInstall = (event: Event) => {
-      event.preventDefault()
-      setInstallPrompt(event as InstallPromptEvent)
-    }
-    const installed = () => {
-      setInstallPrompt(null)
-      showToast('小月历已添加到主屏幕。')
-    }
-    window.addEventListener('beforeinstallprompt', beforeInstall)
-    window.addEventListener('appinstalled', installed)
-    return () => {
-      window.removeEventListener('beforeinstallprompt', beforeInstall)
-      window.removeEventListener('appinstalled', installed)
-    }
-  }, [showToast])
 
   useEffect(() => {
     const updateToday = () => {
@@ -360,12 +339,6 @@ export default function App() {
     showToast('应用锁已关闭。')
   }
 
-  const installApp = async () => {
-    if (!installPrompt) return showToast('请打开浏览器菜单，选择「添加到主屏幕」安装小月历。')
-    await installPrompt.prompt()
-    const result = await installPrompt.userChoice
-    if (result.outcome === 'accepted') setInstallPrompt(null)
-  }
 
   useEffect(() => {
     if (!data?.settings.appLock.enabled || locked) return
@@ -374,53 +347,6 @@ export default function App() {
     return () => document.removeEventListener('visibilitychange', lockOnLeave)
   }, [data?.settings.appLock.enabled, locked])
 
-  useEffect(() => {
-    if (!ready || !data || locked) return
-    const deliverDueReminders = () => {
-      const current = dataRef.current
-      if (!current || !current.settings.onboardingComplete) return
-      const now = new Date()
-      const currentDay = localDateString(now)
-      const nextForecast = calculateForecast(current.periods, current.settings, currentDay)
-      const active = current.periods.some((period) => period.endDate === null)
-      const reminders = current.settings.reminders
-      const candidates: { key: string; date: string; time: string; title: string; body: string }[] = []
-      if (reminders.forecastEnabled && !active && nextForecast.status === 'ready' && nextForecast.expectedStart && nextForecast.expectedStart >= currentDay) {
-        const date = addCalendarDays(nextForecast.expectedStart, -reminders.forecastDaysBefore)
-        candidates.push({ key: `forecast:${nextForecast.expectedStart}:${reminders.forecastDaysBefore}`, date, time: reminders.forecastTime, title: '预计经期提醒', body: `预计 ${nextForecast.expectedStart} 左右开始经期，记得留意她的状态。` })
-      }
-      if (reminders.checkEnabled && !active && nextForecast.status === 'ready' && nextForecast.expectedStart) {
-        const date = addCalendarDays(nextForecast.expectedStart, reminders.checkAfterDays)
-        candidates.push({ key: `check:${nextForecast.expectedStart}:${reminders.checkAfterDays}`, date, time: reminders.checkTime, title: '经期记录核实提醒', body: '可以确认是否已经开始经期，并在小月历里记录。' })
-      }
-      const due = candidates.find((item) => {
-        if (current.settings.deliveredReminders.includes(item.key) || item.date > currentDay) return false
-        if (daysBetween(item.date, currentDay) > 3) return false
-        const [hour, minute] = item.time.split(':').map(Number)
-        const alarm = parseDateAtTime(item.date, hour, minute)
-        return now.getTime() >= alarm.getTime()
-      })
-      if (!due) return
-      const updated: AppData = {
-        ...current,
-        settings: { ...current.settings, deliveredReminders: [...current.settings.deliveredReminders, due.key].slice(-60) }
-      }
-      dataRef.current = updated
-      setData(updated)
-      void saveQueueRef.current(updated)
-      showToast(due.body)
-      if ('Notification' in window && Notification.permission === 'granted' && document.visibilityState === 'visible') {
-        try { new Notification(`小月历 · ${due.title}`, { body: due.body, icon: `${import.meta.env.BASE_URL}icon.svg`, tag: due.key }) } catch { /* keep the in-app reminder available */ }
-      }
-    }
-    deliverDueReminders()
-    const timer = window.setInterval(deliverDueReminders, 30_000)
-    document.addEventListener('visibilitychange', deliverDueReminders)
-    return () => {
-      window.clearInterval(timer)
-      document.removeEventListener('visibilitychange', deliverDueReminders)
-    }
-  }, [ready, data, locked, showToast])
 
   if (!ready || !data) return <Splash />
   if (locked) return <div className="app-root"><UnlockScreen onUnlock={unlock} onReset={() => openModal('clear')} />{modal === 'clear' && <ClearDataModal onClose={closeModal} onConfirm={clearEverything} />}{toast && <ToastBanner toast={toast} onAction={runToastAction} />}</div>
@@ -444,11 +370,11 @@ export default function App() {
         onBackfill={() => openModal('form-backfill')}
       />}
       {page === 'stats' && <StatsPage periods={data.periods} onBack={goBack} onBackfill={() => openModal('form-backfill')} onEdit={(record) => { setEditingRecord(record); openModal('form-edit') }} />}
-      {page === 'settings' && <SettingsPage settings={data.settings} onBack={goBack} onUpdate={updateSettings} onBackup={() => openModal('backup')} onRestore={() => openModal('restore')} onClear={() => openModal('clear')} onRequestLock={() => openModal('set-pin')} onDisableLock={() => openModal('disable-lock')} onToast={showToast} canInstall={!!installPrompt} onInstall={installApp} />}
+      {page === 'settings' && <SettingsPage settings={data.settings} onBack={goBack} onUpdate={updateSettings} onBackup={() => openModal('backup')} onRestore={() => openModal('restore')} onClear={() => openModal('clear')} onRequestLock={() => openModal('set-pin')} onDisableLock={() => openModal('disable-lock')} onToast={showToast} />}
 
-      {modal === 'form-backfill' && <PeriodFormModal mode="backfill" initialDate={selectedDate < today ? selectedDate : ''} onClose={closeModal} onSave={(start, end) => savePeriod(start, end)} />}
-      {modal === 'form-backfill-fixed' && <PeriodFormModal mode="backfill" initialDate={selectedDate} fixedStartDate endDateMax={getHistoricalPeriodEndDateMax(selectedDate, data.periods, today)} title="记录历史经期" onClose={closeModal} onSave={(start, end) => savePeriod(start, end)} />}
-      {modal === 'form-edit' && editingRecord && <PeriodFormModal mode="edit" record={editingRecord} initialDate={today} onClose={closeModal} onSave={(start, end) => savePeriod(start, end, editingRecord)} onDelete={() => { setDeletingRecord(editingRecord); modalRef.current = 'delete'; setModal('delete') }} />}
+      {modal === 'form-backfill' && <PeriodFormModal mode="backfill" initialDate={selectedDate < today ? selectedDate : ''} periods={data.periods} onClose={closeModal} onSave={(start, end) => savePeriod(start, end)} />}
+      {modal === 'form-backfill-fixed' && <PeriodFormModal mode="backfill" initialDate={selectedDate} periods={data.periods} fixedStartDate endDateMax={getHistoricalPeriodEndDateMax(selectedDate, data.periods, today)} title="记录历史经期" onClose={closeModal} onSave={(start, end) => savePeriod(start, end)} />}
+      {modal === 'form-edit' && editingRecord && <PeriodFormModal mode="edit" record={editingRecord} initialDate={today} periods={data.periods} onClose={closeModal} onSave={(start, end) => savePeriod(start, end, editingRecord)} onDelete={() => { setDeletingRecord(editingRecord); modalRef.current = 'delete'; setModal('delete') }} />}
       {modal === 'delete' && deletingRecord && <ConfirmRecordModal kind="delete" date={deletingRecord.startDate} onClose={closeModal} onConfirm={deletePeriod} />}
       {modal === 'backup' && <BackupPasswordModal mode="create" onClose={closeModal} onCreate={handleBackup} onRestore={handleRestore} onError={showToast} />}
       {modal === 'restore' && <BackupPasswordModal mode="restore" onClose={closeModal} onCreate={handleBackup} onRestore={handleRestore} onError={showToast} />}
@@ -475,14 +401,3 @@ function Splash() {
   return <main className="splash-screen"><span className="brand-mark brand-mark--large"><Icon name="calendar" size={25} /></span><strong>小月历</strong><span>正在打开本机记录…</span></main>
 }
 
-function addCalendarDays(date: string, amount: number): string {
-  const value = new Date(`${date}T12:00:00`)
-  value.setDate(value.getDate() + amount)
-  return localDateString(value)
-}
-
-function parseDateAtTime(date: string, hour: number, minute: number): Date {
-  const result = new Date(`${date}T12:00:00`)
-  result.setHours(hour, minute, 0, 0)
-  return result
-}
