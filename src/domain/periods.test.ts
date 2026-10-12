@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getPeriodOnDate, togglePeriodForDate, validatePeriod, type PeriodToggleResult } from './periods'
+import { getPeriodOnDate, togglePeriodForDate, undoPeriodToggle, validatePeriod, type PeriodToggleResult } from './periods'
 import type { PeriodRecord } from '../types'
 
 function period(id: string, startDate: string, endDate: string | null): PeriodRecord {
@@ -75,5 +75,29 @@ describe('period date toggle', () => {
   it('keeps completed historical dates read-only from the toggle', () => {
     expect(togglePeriodForDate(saved, '2024-03-03', true, '2024-03-10').ok).toBe(false)
     expect(togglePeriodForDate(saved, '2024-03-03', false, '2024-03-10').ok).toBe(false)
+  })
+})
+
+describe('rapid period toggles and undo', () => {
+  it('ignores duplicate starts and rejects stale undo after a fast close', () => {
+    const today = '2024-03-10'
+    const started = changed(togglePeriodForDate([], today, true, today))
+    const duplicateStart = togglePeriodForDate(started.periods, today, true, today)
+    expect(duplicateStart).toMatchObject({ ok: true, changed: false })
+
+    const ended = changed(togglePeriodForDate(started.periods, today, false, today))
+    expect(ended.record.endDate).toBe(today)
+    expect(togglePeriodForDate(ended.periods, today, false, today).ok).toBe(false)
+    expect(undoPeriodToggle(ended.periods, 'started', started.record, null)).toBeNull()
+
+    const restored = undoPeriodToggle(ended.periods, 'ended', ended.record, started.record)
+    expect(restored?.[0]).toMatchObject({ id: started.record.id, endDate: null, updatedAt: started.record.updatedAt })
+  })
+
+  it('refuses to undo an end if another period is now active', () => {
+    const oldRecord = period('old', '2024-03-01', '2024-03-03')
+    const activeRecord = period('active', '2024-03-10', null)
+    const previous = period('old', '2024-03-01', null)
+    expect(undoPeriodToggle([oldRecord, activeRecord], 'ended', oldRecord, previous)).toBeNull()
   })
 })

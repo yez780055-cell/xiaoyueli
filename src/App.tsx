@@ -4,8 +4,8 @@ import type { AppData, AppSettings, Page, PeriodRecord } from './types'
 import { daysBetween, localDateString, shiftMonth } from './domain/date'
 import { calculateForecast } from './domain/forecast'
 import { prepareRestoredData } from './domain/backup'
-import { createPeriod, sortPeriods, togglePeriodForDate, validatePeriod } from './domain/periods'
-import { clearAppData, emptyAppData, loadAppData, saveAppData } from './domain/storage'
+import { createPeriod, sortPeriods, togglePeriodForDate, undoPeriodToggle, validatePeriod } from './domain/periods'
+import { clearAppData, createSerialSaveQueue, emptyAppData, loadAppData, saveAppData } from './domain/storage'
 import { createPinHash, decryptBackup, encryptBackup, verifyPin } from './domain/security'
 import { Icon } from './components/Icon'
 import { Modal } from './components/Modal'
@@ -51,6 +51,11 @@ export default function App() {
     if (toastTimer.current !== null) window.clearTimeout(toastTimer.current)
     toastTimer.current = window.setTimeout(() => setToast(null), 3200)
   }, [])
+
+  const saveQueueRef = useRef(createSerialSaveQueue<AppData>(
+    saveAppData,
+    () => showToast('保存失败，请检查设备存储空间。')
+  ))
 
   const runToastAction = () => {
     const action = toast?.action
@@ -163,7 +168,7 @@ export default function App() {
     const next = update(previous)
     dataRef.current = next
     setData(next)
-    void saveAppData(next).catch(() => showToast('保存失败，请检查设备存储空间。'))
+    void saveQueueRef.current(next)
   }, [showToast])
 
   const updateSettings = useCallback((update: Partial<AppSettings>) => {
@@ -196,32 +201,15 @@ export default function App() {
       label: '撤销',
       onClick: () => {
         const latest = dataRef.current
-        const changedRecord = latest?.periods.find((period) => period.id === result.record.id)
-        if (!latest || !changedRecord || changedRecord.updatedAt !== result.record.updatedAt) {
+        const restoredPeriods = latest
+          ? undoPeriodToggle(latest.periods, result.action, result.record, previousRecord)
+          : null
+        if (!latest || !restoredPeriods) {
           showToast('记录已变化，无法撤销。')
           return
         }
-        if (result.action === 'started') {
-          if (changedRecord.endDate !== null) {
-            showToast('记录已变化，无法撤销。')
-            return
-          }
-          commit((previous) => ({ ...previous, periods: previous.periods.filter((period) => period.id !== changedRecord.id) }))
-          showToast('已撤销经期开始记录。')
-          return
-        }
-        if (changedRecord.endDate !== result.record.endDate || latest.periods.some((period) => period.id !== changedRecord.id && period.endDate === null)) {
-          showToast('记录已变化，无法撤销。')
-          return
-        }
-        const restoredUpdatedAt = previousRecord?.updatedAt ?? changedRecord.createdAt
-        commit((previous) => ({
-          ...previous,
-          periods: sortPeriods(previous.periods.map((period) => period.id === changedRecord.id
-            ? { ...period, endDate: null, updatedAt: restoredUpdatedAt }
-            : period))
-        }))
-        showToast('已撤销经期结束记录。')
+        commit((previous) => ({ ...previous, periods: restoredPeriods }))
+        showToast(result.action === 'started' ? '已撤销经期开始记录。' : '已撤销经期结束记录。')
       }
     }
     showToast(result.action === 'started'
@@ -276,7 +264,7 @@ export default function App() {
     }
     dataRef.current = next
     setData(next)
-    void saveAppData(next).catch(() => showToast('保存失败，请检查设备存储空间。'))
+    void saveQueueRef.current(next)
     setPage('calendar')
     pageRef.current = 'calendar'
     if (action === 'backfill') openModal('form-backfill')
@@ -310,7 +298,7 @@ export default function App() {
     const restored = { ...pendingRestore, settings: { ...pendingRestore.settings, onboardingComplete: true } }
     dataRef.current = restored
     setData(restored)
-    void saveAppData(restored).catch(() => showToast('恢复失败，请检查设备存储空间。'))
+    void saveQueueRef.current(restored)
     setPendingRestore(null)
     setLocked(false)
     setPage('calendar')
@@ -406,7 +394,7 @@ export default function App() {
       }
       dataRef.current = updated
       setData(updated)
-      void saveAppData(updated).catch(() => undefined)
+      void saveQueueRef.current(updated)
       showToast(due.body)
       if ('Notification' in window && Notification.permission === 'granted' && document.visibilityState === 'visible') {
         try { new Notification(`小月历 · ${due.title}`, { body: due.body, icon: `${import.meta.env.BASE_URL}icon.svg`, tag: due.key }) } catch { /* keep the in-app reminder available */ }

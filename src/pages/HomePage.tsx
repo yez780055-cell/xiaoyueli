@@ -41,7 +41,7 @@ export function HomePage({
   const selectedForecastWindow = selectedDateType === 'uncertain'
   const isFuture = selectedDate > today
   const hasRecords = periods.length > 0
-  const toggleChecked = Boolean(selectedPeriod && selectedPeriod.endDate === null)
+  const toggleChecked = Boolean(selectedPeriod && (selectedPeriod.endDate === null || selectedDate < selectedPeriod.endDate))
   const toggleDisabled = isFuture || Boolean(selectedPeriod?.endDate) || Boolean(active && !selectedPeriod)
   const completedLength = selectedPeriod?.endDate ? completedPeriodLength(selectedPeriod) : null
   const detailStatus = selectedPeriod

@@ -100,6 +100,29 @@ export function togglePeriodForDate(periods: PeriodRecord[], date: string, enabl
   }
 }
 
+export function undoPeriodToggle(
+  periods: PeriodRecord[],
+  action: 'started' | 'ended',
+  changedRecord: PeriodRecord,
+  previousRecord: PeriodRecord | null
+): PeriodRecord[] | null {
+  const current = periods.find((period) => period.id === changedRecord.id)
+  if (!current || current.updatedAt !== changedRecord.updatedAt) return null
+
+  if (action === 'started') {
+    if (current.endDate !== null) return null
+    return periods.filter((period) => period.id !== current.id)
+  }
+
+  if (current.endDate !== changedRecord.endDate || periods.some((period) => period.id !== current.id && period.endDate === null)) {
+    return null
+  }
+  const restoredUpdatedAt = previousRecord?.updatedAt ?? current.createdAt
+  return sortPeriods(periods.map((period) => period.id === current.id
+    ? { ...period, endDate: null, updatedAt: restoredUpdatedAt }
+    : period))
+}
+
 export function average(values: number[]): number | null {
   if (values.length === 0) return null
   return values.reduce((sum, value) => sum + value, 0) / values.length
