@@ -1,6 +1,6 @@
 import type { AppSettings, Forecast, PeriodRecord } from '../types'
 import { daysBetween, formatDate, weekdayLabel } from '../domain/date'
-import { forecastCountdown, isForecastDate } from '../domain/forecast'
+import { classifyCalendarDate, forecastCountdown } from '../domain/forecast'
 import { completedPeriodLength, getActivePeriod, getPeriodOnDate, periodDayNumber } from '../domain/periods'
 import { CalendarGrid } from '../components/CalendarGrid'
 import { Icon } from '../components/Icon'
@@ -40,7 +40,9 @@ export function HomePage({
 }) {
   const active = getActivePeriod(periods)
   const selectedPeriod = getPeriodOnDate(periods, selectedDate, today)
-  const selectedForecast = !selectedPeriod && isForecastDate(selectedDate, forecast)
+  const selectedDateType = classifyCalendarDate(selectedDate, periods, forecast, today)
+  const selectedForecast = selectedDateType === 'predicted'
+  const selectedForecastWindow = selectedDateType === 'uncertain'
   const isFuture = selectedDate > today
   const hasRecords = periods.length > 0
   const countdown = forecastCountdown(forecast)
@@ -58,7 +60,9 @@ export function HomePage({
           <div className="hero-mainline"><div><strong>第 {periodDayNumber(active, today)} 天</strong><p>从 {formatDate(active.startDate, false)} 开始 · 结束日期由你确认</p></div><span className="hero-symbol hero-symbol--pink"><Icon name="drop" size={24} /></span></div>
           <div className="progress-track"><span className="progress-pink" style={{ width: `${Math.min(100, Math.max(14, periodDayNumber(active, today) * 16))}%` }} /></div>
           <div className="hero-bottomline"><span>{formatDate(active.startDate, false)} — 今天</span><button className="hero-action-link" onClick={onEnd}>今天结束经期 <Icon name="chevron-right" size={15} /></button></div>
-          {forecast.status === 'insufficient-data' && <div className="hero-prediction-note"><Icon name="info" size={14} />{forecast.reason}</div>}
+          {forecast.status === 'ready' ? (
+            <div className="hero-prediction-note"><Icon name="info" size={14} /><span>下次预计 {forecast.expectedStart && formatDate(forecast.expectedStart, false)}（{countdown}）；可能提前至 {forecast.windowStart && formatDate(forecast.windowStart, false)}，推迟至 {forecast.windowEnd && formatDate(forecast.windowEnd, false)}。{forecast.reason}</span></div>
+          ) : forecast.status === 'insufficient-data' ? <div className="hero-prediction-note"><Icon name="info" size={14} />{forecast.reason}</div> : null}
         </section>
       ) : !hasRecords ? (
         <section className="cycle-hero cycle-hero--empty card">
@@ -68,10 +72,11 @@ export function HomePage({
         </section>
       ) : forecast.status === 'ready' ? (
         <section className="cycle-hero cycle-hero--forecast card">
-          <div className="cycle-hero-top"><span className="status-label status-label--purple"><i />距下次经期</span><span className="hero-soft-label">{forecast.basis === 'history' ? '根据实际记录' : '参考估算'}</span></div>
+          <div className="cycle-hero-top"><span className="status-label status-label--purple"><i />距下次经期</span><span className="hero-soft-label">{forecast.basis === 'history' ? `最近 ${forecast.sampleCount} 个周期中位数` : forecast.basis === 'recent-cycle' ? '依据最近一个周期' : '参考周期估算'}</span></div>
           <div className="hero-mainline"><div><strong>{countdown}</strong><p>预计 {forecast.expectedStart && formatDate(forecast.expectedStart)}</p></div><span className="hero-symbol hero-symbol--purple"><Icon name="sparkle" size={23} /></span></div>
           <div className="progress-track progress-track--purple"><span className="progress-purple" style={{ width: `${forecast.daysUntil !== null && forecast.daysUntil >= 0 ? Math.max(18, Math.min(100, 100 - forecast.daysUntil * 3)) : 100}%` }} /></div>
-          <div className="hero-bottomline"><span>{forecast.windowStart && forecast.windowEnd ? `预计范围 ${formatDate(forecast.windowStart, false)} — ${formatDate(forecast.windowEnd, false)}` : forecast.reason}</span><span className="confidence-label">{forecast.confidence === 'low' ? '估算' : forecast.confidence === 'high' ? '较稳定' : '参考'}</span></div>
+          <div className="hero-bottomline"><span>{forecast.windowStart && forecast.windowEnd ? `可能提前至 ${formatDate(forecast.windowStart, false)} · 推迟至 ${formatDate(forecast.windowEnd, false)}` : forecast.reason}</span><span className="confidence-label">{forecast.confidence === 'low' ? '低可信' : forecast.confidence === 'high' ? '较稳定' : '参考'}</span></div>
+          {forecast.reason.includes('核实历史记录') && <div className="hero-prediction-note"><Icon name="info" size={14} />{forecast.reason}</div>}
         </section>
       ) : (
         <section className="cycle-hero cycle-hero--insufficient card">
@@ -94,8 +99,14 @@ export function HomePage({
         ) : selectedForecast ? (
           <>
             <div className="detail-status-line detail-status-line--purple"><span className="record-bullet record-bullet--forecast" />预测经期 · 不是实际记录</div>
-            <div className="forecast-detail-note"><Icon name="info" size={17} /><span>预计开始 {forecast.expectedStart && formatDate(forecast.expectedStart)}<small>{forecast.windowStart && forecast.windowEnd ? `可能范围 ${formatDate(forecast.windowStart, false)} — ${formatDate(forecast.windowEnd, false)}` : forecast.reason}</small></span></div>
+            <div className="forecast-detail-note"><Icon name="info" size={17} /><span>预计经期 · 非实际记录<small>预计开始 {forecast.expectedStart && formatDate(forecast.expectedStart)}{forecast.windowStart && forecast.windowEnd ? ` · 可能提前至 ${formatDate(forecast.windowStart, false)}，推迟至 ${formatDate(forecast.windowEnd, false)}` : ''}</small></span></div>
             {forecast.periodLength && <p className="prediction-duration">预计持续约 {forecast.periodLength} 天，仅供参考。</p>}
+          </>
+        ) : selectedForecastWindow ? (
+          <>
+            <div className="detail-status-line detail-status-line--purple"><span className="record-bullet record-bullet--forecast" />预测开始日期浮动范围 · 非经期标记</div>
+            <div className="forecast-detail-note"><Icon name="info" size={17} /><span>这一天处于预计开始日期可能提前或推迟的范围内。<small>{forecast.expectedStart ? `中心估算日期为 ${formatDate(forecast.expectedStart)}；这一天不是预计经期色带，也不代表实际经期。` : '这一天仅属于预测不确定范围，不是实际经期。'}</small></span></div>
+            {forecast.reason.includes('核实历史记录') && <p className="prediction-duration">{forecast.reason}</p>}
           </>
         ) : isFuture ? (
           <div className="empty-detail"><span>这一天还没有记录</span><p>未来日期不会被标记为实际经期。</p></div>

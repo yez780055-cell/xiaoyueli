@@ -42,8 +42,9 @@ export interface Forecast {
   windowEnd: string | null
   periodLength: number | null
   averageCycle: number | null
+  sampleCount: number | null
   daysUntil: number | null
-  basis: 'history' | 'reference' | null
+  basis: 'history' | 'recent-cycle' | 'reference' | null
   confidence: 'low' | 'medium' | 'high' | null
 }
 

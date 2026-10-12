@@ -1,6 +1,5 @@
 import { formatDate, monthGrid, monthTitle, sameMonth } from '../domain/date'
-import { getPeriodOnDate } from '../domain/periods'
-import { isForecastDate } from '../domain/forecast'
+import { classifyCalendarDate } from '../domain/forecast'
 import type { Forecast, PeriodRecord } from '../types'
 import { Icon } from './Icon'
 
@@ -24,7 +23,8 @@ export function CalendarGrid({
   onMonthChange: (amount: number) => void
 }) {
   const days = monthGrid(monthDate)
-  const types = days.map((date) => getPeriodOnDate(periods, date, today) ? 'actual' : isForecastDate(date, forecast) ? 'predicted' : 'none')
+  const statuses = days.map((date) => classifyCalendarDate(date, periods, forecast, today))
+  const types = statuses.map((status) => status === 'actual' || status === 'predicted' ? status : 'none')
 
   return (
     <section className="calendar-card card" aria-label={`${monthTitle(monthDate)}月历`}>
@@ -39,6 +39,7 @@ export function CalendarGrid({
       <div className="calendar-days">
         {days.map((date, index) => {
           const type = types[index]
+          const status = statuses[index]
           const row = Math.floor(index / 7)
           const previousSame = index % 7 > 0 && types[index - 1] === type && type !== 'none'
           const nextSame = index % 7 < 6 && types[index + 1] === type && type !== 'none'
@@ -57,7 +58,7 @@ export function CalendarGrid({
             <button
               className={classes}
               key={`${row}-${date}`}
-              aria-label={`${formatDate(date)}${type === 'actual' ? '，实际经期' : type === 'predicted' ? '，预测经期' : ''}${date === today ? '，今天' : ''}`}
+              aria-label={`${formatDate(date)}${status === 'actual' ? '，实际经期' : status === 'predicted' ? '，预测经期' : status === 'uncertain' ? '，预测开始日期可能范围' : ''}${date === today ? '，今天' : ''}`}
               aria-pressed={date === selectedDate}
               onClick={() => onSelect(date)}
             >
