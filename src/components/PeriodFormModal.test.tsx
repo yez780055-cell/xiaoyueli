@@ -62,6 +62,22 @@ describe('custom period date picker', () => {
     expect(conflictCell).toContain('disabled=""')
   })
 
+  it('keeps the current year available after navigating to an earlier year', () => {
+    const markup = renderToStaticMarkup(createElement(CalendarDatePicker, {
+      value: '2023-06-21',
+      monthDate: '2023-06-01',
+      today: '2026-10-12',
+      rangeStart: '2023-06-21',
+      isDateDisabled: () => false,
+      onSelect: () => undefined,
+      onMonthChange: () => undefined
+    }))
+    const yearSelect = markup.match(/<select aria-label="选择年份"[^>]*>([\s\S]*?)<\/select>/)?.[1] ?? ''
+
+    expect(yearSelect).toContain('2026年')
+    expect(yearSelect).toContain('2023年')
+  })
+
   it('keeps cancel separate from save and renders no native date control', () => {
     const onSave = vi.fn()
     const markup = renderToStaticMarkup(createElement(PeriodFormModal, {

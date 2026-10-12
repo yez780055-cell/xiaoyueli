@@ -26,7 +26,8 @@ export function CalendarDatePicker({
   const currentMonth = monthDate.slice(0, 7)
   const currentYear = date.getFullYear()
   const minimumYear = value ? Math.min(1900, Number(value.slice(0, 4))) : 1900
-  const years = Array.from({ length: currentYear - minimumYear + 1 }, (_, index) => currentYear - index)
+  const latestYear = Number(today.slice(0, 4))
+  const years = Array.from({ length: latestYear - minimumYear + 1 }, (_, index) => latestYear - index)
   const months = Array.from({ length: 12 }, (_, index) => index + 1)
   const atFirstMonth = currentMonth <= '1900-01'
   const atLastMonth = currentMonth >= today.slice(0, 7)
