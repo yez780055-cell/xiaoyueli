@@ -1,0 +1,94 @@
+name: Android test APK
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/android-test-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-debug-apk:
+    name: Build installable Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out the selected source commit
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install project dependencies
+        run: npm ci
+
+      - name: Verify the existing web app
+        run: |
+          npm run typecheck
+          npm test
+          npm run build
+        env:
+          VITE_BASE_PATH: /
+
+      - name: Install temporary Capacitor build tools
+        run: npm install --no-save --package-lock=false --no-audit --no-fund @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7
+
+      - name: Configure Android test app
+        run: |
+          cat > capacitor.config.json <<'EOF'
+          {
+            "appId": "com.yezi.xiaoyueli",
+            "appName": "小月历",
+            "webDir": "dist"
+          }
+          EOF
+          npx cap add android
+          npx cap sync android
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Build debug APK
+        working-directory: android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Package APK for manual testing
+        run: |
+          mkdir -p test-apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk test-apk/xiaoyueli-android-test.apk
+          (cd test-apk && sha256sum xiaoyueli-android-test.apk > SHA256SUMS.txt)
+          cat > test-apk/README.txt <<'EOF'
+          XiaoYueLi Android test APK
+          Package: com.yezi.xiaoyueli
+          Build: Debug (development signing key); personal testing only.
+          Source: the checked-out GitHub workflow commit.
+          Existing data from the web version does NOT automatically transfer into this Android app.
+          Export an encrypted backup from the web version, then use restore inside the Android version if supported.
+          Do not erase web data while testing. This APK is NOT a Play Store release.
+          EOF
+
+      - name: Upload test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: xiaoyueli-android-test-apk
+          path: test-apk/
+          if-no-files-found: error
+          retention-days: 14
