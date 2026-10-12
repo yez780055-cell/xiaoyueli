@@ -4,6 +4,17 @@ const DB_NAME = 'xiaoyueli-local'
 const STORE_NAME = 'app-state'
 const LOCAL_FALLBACK = 'xiaoyueli-state-v1'
 
+export function createSerialSaveQueue<T>(
+  save: (value: T) => Promise<void>,
+  onError: (error: unknown) => void
+): (value: T) => Promise<void> {
+  let pending = Promise.resolve()
+  return (value) => {
+    pending = pending.then(() => save(value)).catch(onError)
+    return pending
+  }
+}
+
 export function defaultSettings(): AppSettings {
   return {
     onboardingComplete: false,
