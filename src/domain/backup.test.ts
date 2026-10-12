@@ -13,6 +13,17 @@ describe('backup restore validation', () => {
     expect(restored.settings.onboardingComplete).toBe(true)
   })
 
+  it('preserves reminder settings and memo from an older backup payload', () => {
+    const data = emptyAppData()
+    data.settings.reminders.forecastEnabled = true
+    data.settings.reminders.forecastDaysBefore = 1
+    data.settings.reminders.checkEnabled = true
+    data.settings.careMemo = '旧备忘'
+    const restored = prepareRestoredData(data, '2024-05-10')
+    expect(restored.settings.reminders).toEqual(data.settings.reminders)
+    expect(restored.settings.careMemo).toBe('旧备忘')
+  })
+
   it('rejects overlapping or future records without returning a partial import', () => {
     const data = emptyAppData()
     data.periods = [

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createSerialSaveQueue } from './storage'
+import { createSerialSaveQueue, defaultSettings, normalizeAppData } from './storage'
 
 function deferred() {
   let resolve!: () => void
@@ -52,5 +52,21 @@ describe('serialized local persistence', () => {
     await expect(enqueue('latest')).resolves.toBeUndefined()
     expect(onError).toHaveBeenCalledTimes(1)
     expect(persisted).toBe('latest')
+  })
+
+  it('keeps reminder fields when normalizing existing local data', () => {
+    const settings = defaultSettings()
+    settings.reminders.forecastEnabled = true
+    settings.reminders.forecastDaysBefore = 5
+    settings.reminders.checkEnabled = true
+    const normalized = normalizeAppData({
+      periods: [],
+      settings: { ...settings, careMemo: '本地备忘' }
+    })
+
+    expect(normalized.settings.reminders.forecastEnabled).toBe(true)
+    expect(normalized.settings.reminders.forecastDaysBefore).toBe(5)
+    expect(normalized.settings.reminders.checkEnabled).toBe(true)
+    expect(normalized.settings.careMemo).toBe('本地备忘')
   })
 })

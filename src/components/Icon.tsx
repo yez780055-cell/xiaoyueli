@@ -4,7 +4,7 @@ type IconName = 'calendar' | 'settings' | 'chevron-left' | 'chevron-right' | 'dr
 
 const drawings: Record<IconName, ReactNode> = {
   calendar: <><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4M17 3v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 17h.01M12 17h.01"/></>,
-  settings: <><circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1 1.4 1.1-1.4 2.4-1.7-.7a8 8 0 0 1-1.8 1l-.3 1.8h-2.8l-.3-1.8a8 8 0 0 1-1.8-1l-1.7.7-1.4-2.4L7.1 15a8 8 0 0 1 0-2l-1.4-1.1 1.4-2.4 1.7.7a8 8 0 0 1 1.8-1l.3-1.8h2.8l.3 1.8a8 8 0 0 1 1.8 1l1.7-.7 1.4 2.4-1.4 1.1a8 8 0 0 1 0 2Z" transform="translate(-1 -1)"/></>,
+  settings: <><path d="M12.22 2h-.44a2 2 0 0 0-2 1.72l-.1.8a2 2 0 0 1-1 1.38l-.7.4a2 2 0 0 1-1.7.12l-.75-.3a2 2 0 0 0-2.6 1.1l-.2.38a2 2 0 0 0 .73 2.73l.65.45a2 2 0 0 1 .85 1.55v.82a2 2 0 0 1-.85 1.55l-.65.45a2 2 0 0 0-.73 2.73l.2.38a2 2 0 0 0 2.6 1.1l.75-.3a2 2 0 0 1 1.7.12l.7.4a2 2 0 0 1 1 1.38l.1.8a2 2 0 0 0 2 1.72h.44a2 2 0 0 0 2-1.72l.1-.8a2 2 0 0 1 1-1.38l.7-.4a2 2 0 0 1 1.7-.12l.75.3a2 2 0 0 0 2.6-1.1l.2-.38a2 2 0 0 0-.73-2.73l-.65-.45a2 2 0 0 1-.85-1.55v-.82a2 2 0 0 1 .85-1.55l.65-.45a2 2 0 0 0 .73-2.73l-.2-.38a2 2 0 0 0-2.6-1.1l-.75.3a2 2 0 0 1-1.7-.12l-.7-.4a2 2 0 0 1-1-1.38l-.1-.8A2 2 0 0 0 12.22 2Z"/><circle cx="12" cy="12" r="3"/></>,
   'chevron-left': <path d="m15 18-6-6 6-6"/>,
   'chevron-right': <path d="m9 18 6-6-6-6"/>,
   drop: <path d="M12 22a7 7 0 0 0 7-7c0-4-7-13-7-13S5 11 5 15a7 7 0 0 0 7 7Z"/>,
@@ -33,9 +33,5 @@ const drawings: Record<IconName, ReactNode> = {
 }
 
 export function Icon({ name, size = 20, strokeWidth = 1.8, className }: { name: IconName; size?: number; strokeWidth?: number; className?: string }) {
-  return (
-    <svg aria-hidden="true" className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
-      {drawings[name]}
-    </svg>
-  )
+  return <svg aria-hidden="true" className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">{drawings[name]}</svg>
 }
