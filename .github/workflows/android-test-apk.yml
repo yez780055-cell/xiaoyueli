@@ -38,7 +38,7 @@ jobs:
           VITE_BASE_PATH: /
 
       - name: Install temporary Capacitor build tools
-        run: npm install --no-save --package-lock=false --no-audit --no-fund @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7
+        run: npm install --no-save --package-lock=false --no-audit --no-fund @capacitor/cli@7.4.4 @capacitor/android@7.4.4
 
       - name: Configure Android test app
         run: |

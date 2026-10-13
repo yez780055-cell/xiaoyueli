@@ -16,8 +16,16 @@ export function Modal({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
     }
+    const onNativeBack = (event: Event) => {
+      event.preventDefault()
+      onClose()
+    }
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    window.addEventListener('xiaoyueli:native-back', onNativeBack)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('xiaoyueli:native-back', onNativeBack)
+    }
   }, [onClose])
 
   return (
