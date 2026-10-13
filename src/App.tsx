@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { registerSW } from 'virtual:pwa-register'
+import { Capacitor } from '@capacitor/core'
+import { App as CapacitorApp } from '@capacitor/app'
+import { resolveAndroidBackAction } from './domain/androidBack'
 import type { AppData, AppSettings, Page, PeriodRecord } from './types'
 import { localDateString, shiftMonth } from './domain/date'
 import { calculateForecast } from './domain/forecast'
@@ -40,6 +43,7 @@ export default function App() {
   const dataRef = useRef<AppData | null>(null)
   const pageRef = useRef<Page>('calendar')
   const modalRef = useRef<ModalName>(null)
+  const lastAndroidBackAt = useRef(0)
 
   const showToast = useCallback((message: string, action?: ToastAction) => {
     setToast({ message, action })
@@ -140,6 +144,56 @@ export default function App() {
     if (pageRef.current === 'calendar') return
     window.history.back()
   }, [])
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return
+    let disposed = false
+    let listener: { remove: () => Promise<void> } | null = null
+
+    void CapacitorApp.addListener('backButton', () => {
+      // Let the topmost in-app sheet consume the native Back action first.
+      // This also handles the settings backup chooser, which has local state.
+      const sheetBack = new Event('xiaoyueli:native-back', { cancelable: true })
+      window.dispatchEvent(sheetBack)
+      if (sheetBack.defaultPrevented) {
+        lastAndroidBackAt.current = 0
+        return
+      }
+      if (modalRef.current) {
+        closeModal()
+        lastAndroidBackAt.current = 0
+        return
+      }
+
+      const state = window.history.state as { statsSubpage?: string } | null
+      const action = resolveAndroidBackAction(
+        pageRef.current,
+        pageRef.current === 'stats' && state?.statsSubpage === 'history',
+        lastAndroidBackAt.current,
+        Date.now()
+      )
+
+      if (action === 'history-back') {
+        lastAndroidBackAt.current = 0
+        window.history.back()
+      } else if (action === 'exit') {
+        void CapacitorApp.exitApp()
+      } else {
+        lastAndroidBackAt.current = Date.now()
+        showToast('再按一次返回退出应用。')
+      }
+    }).then((handle) => {
+      if (disposed) void handle.remove()
+      else listener = handle
+    }).catch(() => {
+      // Browser navigation remains available if the native plugin cannot load.
+    })
+
+    return () => {
+      disposed = true
+      if (listener) void listener.remove()
+    }
+  }, [closeModal, showToast])
 
   const commit = useCallback((update: (previous: AppData) => AppData) => {
     const previous = dataRef.current

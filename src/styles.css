@@ -95,9 +95,11 @@ button:disabled { opacity: .48; cursor: not-allowed; }
 .calendar-heading h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: .015em; }
 .calendar-heading .icon-button { width: 37px; height: 37px; }
 .calendar-weekdays, .calendar-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.calendar-days { touch-action: pan-y; animation: calendar-month-in .18s ease-out both; }
+@keyframes calendar-month-in { from { opacity: .72; transform: translateX(5px); } to { opacity: 1; transform: translateX(0); } }
 .calendar-weekdays { height: 29px; align-items: center; color: #9d949f; font-size: 10px; text-align: center; }
 .calendar-weekdays .weekend-label { color: #c9738c; }
-.calendar-day { position: relative; isolation: isolate; height: 43px; min-width: 0; display: grid; place-items: center; border: 0; border-radius: 0; background: transparent; color: #39323d; cursor: pointer; padding: 0; touch-action: manipulation; }
+.calendar-day { position: relative; isolation: isolate; height: 43px; min-width: 0; display: grid; place-items: center; border: 0; border-radius: 0; background: transparent; color: #39323d; cursor: pointer; padding: 0; touch-action: pan-y; }
 .calendar-day::before { content: ''; z-index: -1; position: absolute; left: 0; right: 0; top: 7px; bottom: 7px; opacity: 0; transition: opacity .16s, background .16s; }
 .calendar-day--actual::before { opacity: 1; background: linear-gradient(90deg, #fde1e9, #fbd7e2); }
 .calendar-day--predicted::before { opacity: 1; background: linear-gradient(90deg, #eee7fa, #e8dff7); }
